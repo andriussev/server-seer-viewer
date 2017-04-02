@@ -1,0 +1,236 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+
+    <title>Server Seer - Viewer</title>
+    <meta name="description" content="The HTML5 Herald">
+    <meta name="author" content="SitePoint">
+
+    <link rel="stylesheet" href="//cdn.jsdelivr.net/chartist.js/latest/chartist.min.css">
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/bulma/0.4.0/css/bulma.min.css">
+    <script src="//cdn.jsdelivr.net/chartist.js/latest/chartist.min.js"></script>
+    <script src="//unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/vue"></script>
+    <style>
+        .section.section-no-padding {
+            padding:0;
+        }
+    </style>
+</head>
+
+<body>
+    <section class="section" v-bind:class="{'section-no-padding':isKioskMode}" id="app">
+        <div v-if="!isKioskMode" class="menu">
+            <div class="columns">
+                <div class="column is-2 field">
+                    <p class="control">
+
+                        <span class="select">
+                            <select v-model="newChartIdentifier">
+                                <option v-for="identifier in identifiers">
+                                    {{identifier}}
+                                </option>
+                            </select>
+                        </span>
+                    </p>
+                </div>
+                <div class="column is-1 field">
+                    <button class="button" v-on:click="addChart(newChartIdentifier)">Add</button>
+                </div>
+                <div class="column is-1 field">
+                    <label>Url to this setup:</label>
+                </div>
+                <div class="column is-7 field">
+                    <input style="width:80%" class="input" type="text" v-model="chartsUrl" />
+                </div>
+                <div class="column is-1 field">
+                    <a class="button is-pulled-right" v-on:click="isKioskMode = true">Enter Kiosk Mode</a>
+                </div>
+            </div>
+        </div>
+        
+        <div v-if="isKioskMode" class="columns">
+            <div class="column is-pulled-right" style="position:absolute;right:0">
+                <a class="button is-pulled-right" v-on:click="isKioskMode = false">Exit Kiosk Mode</a>
+            </div>
+        </div>
+        
+        <div class="chart-viewer columns is-multiline ">
+            <div v-for="chart in charts" class="column is-6" style="height:200px;">
+                <div class="block">
+                    <h2 class="subtitle is-pulled-left">{{chart.identifier}}</h2>
+                    <a v-if="!isKioskMode" class="button is-link is-pulled-right" v-on:click="removeChart(chart)">Remove</a>
+                </div>
+
+                <chartist :identifier="chart.identifier" v-bind:values="chart.values"></chartist>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        var app = new Vue({
+            el: '#app',
+            data: {
+                updateFrequency: 5000,
+                newChartIdentifier: '',
+                identifiers: [],
+                charts: [],
+                isKioskMode: false
+            },
+            mounted: function() {
+
+                // Load available identifiers, used for select when adding
+                this.getIdentifiers();
+
+                // Parse the GET 'values' to resolve into charts
+                var values = getParameterByName('values');
+                if (values) {
+                    var valuesArr = JSON.parse(values);
+                    for (var i = 0; i < valuesArr.length; i++) {
+                        this.addChart(valuesArr[i].identifier);
+                    }
+                }
+
+                // Start interval to get latest entries
+                setInterval(function() {
+                    var self = this;
+                    self.getEntries();
+                }.bind(this), this.updateFrequency);
+            },
+
+            methods: {
+
+                // Inserts a new chart to array from input parameter
+                addChart: function(identifier) {
+                    if (identifier.trim().length == 0) {
+                        return;
+                    }
+
+                    var chart = {
+                        identifier: identifier,
+                        values: []
+                    };
+
+                    this.charts.push(chart);
+
+                    this.newChartIdentifier = '';
+                },
+
+                // Removes the provided chart from array
+                removeChart: function(chart) {
+                    this.charts.splice(this.charts.indexOf(chart), 1);
+                },
+
+                // GET /identifiers, load to identifiers array
+                getIdentifiers: function() {
+                    var self = this;
+
+                    axios.get('/identifiers')
+                        .then(function(response) {
+                            self.identifiers = response.data;
+                        })
+                        .catch(function(error) {
+                            console.log(error);
+                        });
+                },
+
+                // GET /entries, load specific entries by identifiers to array
+                getEntries: function() {
+                    var sendData = [];
+                    for (var i = 0; i < this.charts.length; i++) {
+                        sendData.push({
+                            identifier: this.charts[i].identifier,
+                        });
+                    }
+
+                    var values = sendData;
+
+                    var self = this;
+
+                    axios.get('/entries?values=' + JSON.stringify(values))
+                        .then(function(response) {
+
+                            for (var i = 0; i < self.charts.length; i++) {
+                                for (var j = 0; j < response.data.length; j++) {
+                                    if (self.charts[i].identifier == response.data[j].identifier) {
+                                        self.charts[i].values = response.data[j].data;
+                                    }
+                                }
+
+                            }
+                        })
+                        .catch(function(error) {
+                            console.log(error);
+                        });
+                }
+            },
+
+            computed: {
+
+                // Latest URL for remembering the configuration
+                chartsUrl: function() {
+                    var sendData = [];
+                    for (var i = 0; i < this.charts.length; i++) {
+                        sendData.push({
+                            identifier: this.charts[i].identifier,
+                        });
+                    }
+                    return window.location.origin + "/?values=" + JSON.stringify(sendData);
+                }
+            }
+        });
+
+        // Simple chartist component; possibly not the best idea to redraw it every time
+        // Needs to move the settings out of there
+        Vue.component('chartist', {
+            template: '<div class="ct-chart ct-perfect-fourth"></div>',
+            props: ['identifier', 'values'],
+            methods: {
+                updateChartist: function(dataInput) {
+                    dataProcessed = [];
+                    if (this.identifier == 'memory_remaining') {
+                        for (var i = 0; i < dataInput.length; i++) {
+                            dataProcessed.push(dataInput[i] / 1024);
+                        }
+                    }
+                    else {
+                        dataProcessed = dataInput;
+                    }
+                    new Chartist.Line(this.$el, {
+                        series: [dataProcessed]
+                    }, {
+                        low: 0,
+                        showPoint: false,
+                        fullWidth: true,
+                        height: 200
+                    });
+                }
+            },
+            watch: {
+                'values': function(newVal) {
+                    this.updateChartist(newVal);
+                }
+            }
+        });
+
+        // Parsing the query parameter
+        // http://stackoverflow.com/questions/901115/how-can-i-get-query-string-values-in-javascript
+        function getParameterByName(name, url) {
+            if (!url) {
+                url = window.location.href;
+            }
+            name = name.replace(/[\[\]]/g, "\\$&");
+            var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+                results = regex.exec(url);
+            if (!results) return null;
+            if (!results[2]) return '';
+            return decodeURIComponent(results[2].replace(/\+/g, " "));
+        }
+    </script>
+
+</body>
+
+</html>
