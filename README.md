@@ -16,13 +16,13 @@ This is an application to view data from [Server Seer](https://github.com/andriu
 
 Configuration-mode:
 
-![Configuration-mode][http://i.imgur.com/PVlhAkr.png]
+![Configuration-mode](http://i.imgur.com/PVlhAkr.png)
 
 Kiosk-mode:
 
-![Kiosk-mode][http://i.imgur.com/K7kqwp6.png]
+![Kiosk-mode](http://i.imgur.com/K7kqwp6.png)
 
 
 Kiosk-mode 2:
 
-![Kiosk-mode-2][http://i.imgur.com/0FMzlOx.png]
+![Kiosk-mode-2](http://i.imgur.com/0FMzlOx.png)
