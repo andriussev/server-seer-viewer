@@ -16,7 +16,7 @@
     <script src="https://unpkg.com/vue"></script>
     <style>
         .section.section-no-padding {
-            padding:0;
+            padding: 0;
         }
     </style>
 </head>
@@ -38,7 +38,7 @@
                     </p>
                 </div>
                 <div class="column is-1 field">
-                    <button class="button" v-on:click="addChart(newChartIdentifier)">Add</button>
+                    <button class="button" v-on:click="addChartByIdentifier(newChartIdentifier)">Add</button>
                 </div>
                 <div class="column is-1 field">
                     <label>Url to this setup:</label>
@@ -51,23 +51,55 @@
                 </div>
             </div>
         </div>
-        
+
         <div v-if="isKioskMode" class="columns">
             <div class="column is-pulled-right" style="position:absolute;right:0">
                 <a class="button is-pulled-right" v-on:click="isKioskMode = false">Exit Kiosk Mode</a>
             </div>
         </div>
-        
+
         <div class="chart-viewer columns is-multiline ">
             <div v-for="chart in charts" class="column is-6" style="height:200px;">
                 <div class="block">
                     <h2 class="subtitle is-pulled-left">{{chart.identifier}}</h2>
                     <a v-if="!isKioskMode" class="button is-link is-pulled-right" v-on:click="removeChart(chart)">Remove</a>
+                    <a v-if="!isKioskMode" class="button is-link is-pulled-right" v-on:click="configureChart(chart)">Configure</a>
                 </div>
 
-                <chartist :identifier="chart.identifier" v-bind:values="chart.values"></chartist>
+                <chartist :identifier="chart.identifier" v-bind:modifiers="chart.modifiers" v-bind:values="chart.values"></chartist>
             </div>
         </div>
+
+
+        <div v-if="showChartConfigurationModal" class="modal is-active">
+            <div class="modal-background"></div>
+            <div class="modal-content">
+                <div class="box">
+                    <h1 class="title">Configuring: {{selectedConfigureChart.identifier}}</h1>
+                    <hr/>
+                    <table class="table is-narrow">
+                        <tr v-for="modifier in selectedConfigureChart.modifiers">
+                            <td>{{modifier.type.type}}</td>
+                            <td>{{modifier.value}}</td>
+                            <td>
+                                <a class="button" v-on:click="removeChartModifier(selectedConfigureChart, modifier)">Remove</a>
+                            </td>
+                        </tr>
+                    </table>
+                    <h3 class="subtitle">Add modifier</h3>
+                    <select v-model="newModifier">
+                        <option v-for="modifier in availableModifiers" v-bind:value="modifier">
+                            {{modifier.type}} - {{modifier.text}}
+                        </option>
+                    </select>
+                    <input type="text" v-model="newModifierValue" />
+                    <a class="button" v-on:click="addChartModifier(selectedConfigureChart)">Add</a>
+
+                </div>
+            </div>
+            <button class="modal-close" v-on:click="showChartConfigurationModal = false"></button>
+        </div>
+
     </section>
 
     <script>
@@ -75,10 +107,25 @@
             el: '#app',
             data: {
                 updateFrequency: 5000,
+                availableModifiers: [{
+                    type: "divide",
+                    short: "/",
+                    text: "Divides the chart result",
+                }, {
+                    type: "multiply",
+                    short: "*",
+                    text: "Multiplies the chart result"
+                }],
                 newChartIdentifier: '',
                 identifiers: [],
                 charts: [],
-                isKioskMode: false
+                isKioskMode: false,
+
+                // Configuration modal
+                showChartConfigurationModal: false,
+                selectedConfigureChart: null,
+                newModifier: null,
+                newModifierValue: ''
             },
             mounted: function() {
 
@@ -90,7 +137,7 @@
                 if (values) {
                     var valuesArr = JSON.parse(values);
                     for (var i = 0; i < valuesArr.length; i++) {
-                        this.addChart(valuesArr[i].identifier);
+                        this.addChart(valuesArr[i].identifier, valuesArr[i].modifiers);
                     }
                 }
 
@@ -104,14 +151,15 @@
             methods: {
 
                 // Inserts a new chart to array from input parameter
-                addChart: function(identifier) {
+                addChart: function(identifier, modifiers) {
                     if (identifier.trim().length == 0) {
                         return;
                     }
 
                     var chart = {
                         identifier: identifier,
-                        values: []
+                        values: [],
+                        modifiers: (typeof(modifiers) !== 'undefined') ? modifiers : [],
                     };
 
                     this.charts.push(chart);
@@ -122,6 +170,29 @@
                 // Removes the provided chart from array
                 removeChart: function(chart) {
                     this.charts.splice(this.charts.indexOf(chart), 1);
+                },
+                configureChart: function(chart) {
+                    this.selectedConfigureChart = chart;
+                    this.showChartConfigurationModal = true;
+                },
+
+                removeChartModifier: function(chart, modifier) {
+                    chart.modifiers.splice(chart.modifiers.indexOf(modifier), 1);
+                },
+                addChartModifier: function(chart) {
+                    if (this.newModifier == null || this.newModifierValue.trim().length == 0) {
+                        return;
+                    }
+
+                    var modifier = {
+                        type: this.newModifier,
+                        value: this.newModifierValue.trim()
+                    };
+
+                    chart.modifiers.push(modifier);
+                    
+                    this.newModifier = null;
+                    this.newModifierValue = '';
                 },
 
                 // GET /identifiers, load to identifiers array
@@ -176,6 +247,7 @@
                     for (var i = 0; i < this.charts.length; i++) {
                         sendData.push({
                             identifier: this.charts[i].identifier,
+                            modifiers: this.charts[i].modifiers,
                         });
                     }
                     return window.location.origin + "/?values=" + JSON.stringify(sendData);
@@ -187,18 +259,27 @@
         // Needs to move the settings out of there
         Vue.component('chartist', {
             template: '<div class="ct-chart ct-perfect-fourth"></div>',
-            props: ['identifier', 'values'],
+            props: ['identifier', 'modifiers', 'values'],
             methods: {
                 updateChartist: function(dataInput) {
-                    dataProcessed = [];
-                    if (this.identifier == 'memory_remaining') {
-                        for (var i = 0; i < dataInput.length; i++) {
-                            dataProcessed.push(dataInput[i] / 1024);
+                    var dataProcessed = [];
+
+                    // Run all modifiers on input data
+
+                    for (var i = 0; i < dataInput.length; i++) {
+                        var value = dataInput[i];
+                        for (var j = 0; j < this.modifiers.length; j++) {
+                            var modifierType = this.modifiers[j].type.type;
+                            var modifierValue = this.modifiers[j].value;
+                            if (modifierType == 'divide') {
+                                value = value / modifierValue;
+                            } else if(modifierType == 'multiply') {
+                                value = value * modifierValue;
+                            }
                         }
+                        dataProcessed.push(value);
                     }
-                    else {
-                        dataProcessed = dataInput;
-                    }
+                    
                     new Chartist.Line(this.$el, {
                         series: [dataProcessed]
                     }, {
@@ -212,7 +293,10 @@
             watch: {
                 'values': function(newVal) {
                     this.updateChartist(newVal);
-                }
+                },
+                'modifiers': function() {
+                    this.updateChartist(this.values);
+                },
             }
         });
 
